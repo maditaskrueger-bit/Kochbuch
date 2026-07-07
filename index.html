@@ -302,10 +302,21 @@ function buildHeader() {
   logo.onclick = () => { state.view='list'; state.selectedCat='all'; render(); };
   h.appendChild(logo);
   const actions = el('div', {class:'header-actions'});
+  const exportBtn = el('button', {class:'btn btn-sm'});
+  exportBtn.textContent = '↓ Export';
+  exportBtn.onclick = () => {
+    const exportData = { recipes: db.recipes, categories: db.categories, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'kochbuch-export.json'; a.click();
+    URL.revokeObjectURL(url);
+    showToast('Kochbuch exportiert (' + db.recipes.length + ' Rezepte)');
+  };
   const addBtn = el('button', {class:'btn btn-primary btn-sm'});
   addBtn.textContent = '+ Rezept hinzufügen';
   addBtn.onclick = () => { state.form=blankForm(); state.view='add'; state.editingRecipe=null; render(); };
-  actions.appendChild(addBtn);
+  actions.append(exportBtn, addBtn);
   h.appendChild(actions);
   return h;
 }
