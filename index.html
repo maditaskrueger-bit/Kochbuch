@@ -104,12 +104,62 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .emoji-btn { font-size: 20px; padding: 5px 9px; border-radius: 6px; background: #f5f4f0; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; transition: background 0.1s; }
   .emoji-btn:hover, .emoji-btn.selected { background: #dbeafe; border-color: #185fa5; }
+  .filter-bar {
+    padding: 0.75rem 2rem 0;
+    display: flex; gap: 8px; overflow-x: auto;
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .filter-bar::-webkit-scrollbar { display: none; }
+  .filter-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 5px 12px; border-radius: 20px; white-space: nowrap;
+    border: 1px solid rgba(0,0,0,0.15); background: #fff;
+    font-size: 13px; color: #666; cursor: pointer;
+    transition: all 0.15s; flex-shrink: 0; font-family: inherit;
+  }
+  .filter-chip:hover { border-color: #185fa5; color: #185fa5; }
+  .filter-chip.active { background: #185fa5; color: #fff; border-color: #185fa5; }
+  .bottom-nav { display: none; }
   @media (max-width: 640px) {
     .sidebar { display: none; }
     .form-grid { grid-template-columns: 1fr; }
     .nutrition-grid { grid-template-columns: repeat(2,1fr); }
     .detail-content { padding: 1rem; }
-    .recipe-grid { padding: 0 1rem 2rem; }
+    .recipe-grid { padding: 0 1rem 5rem; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .card-img { height: 110px; }
+    .card-body { padding: 10px 10px 8px; }
+    .card-title { font-size: 13px; }
+    .filter-bar { padding: 0.75rem 1rem 0; }
+    .search-bar { padding: 1rem 1rem 0; }
+    .header-actions { display: none; }
+    .bottom-nav {
+      display: flex; position: fixed; bottom: 0; left: 0; right: 0;
+      background: #fff; border-top: 1px solid rgba(0,0,0,0.1);
+      z-index: 150; padding-bottom: env(safe-area-inset-bottom);
+    }
+    .bottom-nav-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 8px 4px 10px; cursor: pointer;
+      font-size: 10px; color: #999; border: none; background: none;
+      font-family: inherit; gap: 3px; transition: color 0.15s;
+    }
+    .bottom-nav-item.active { color: #185fa5; }
+    .bottom-nav-item .nav-icon { font-size: 22px; line-height: 1; }
+    .bottom-nav-add {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 8px 4px 10px; cursor: pointer;
+      font-size: 10px; color: #fff; border: none; background: none;
+      font-family: inherit; gap: 3px;
+    }
+    .bottom-nav-add .nav-icon-add {
+      width: 42px; height: 42px; background: #185fa5; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px; color: #fff; margin-top: -16px;
+      box-shadow: 0 2px 10px rgba(24,95,165,0.4);
+    }
+    .main { padding-bottom: 0; }
+    .status-banner { padding: 6px 1rem; font-size: 12px; }
+    .detail-actions { padding: 0 1rem 6rem; }
   }
 </style>
 </head>
@@ -292,7 +342,53 @@ function buildApp() {
   wrap.appendChild(body);
   if (state.view === 'add' || state.view === 'edit') wrap.appendChild(buildRecipeModal());
   if (state.view === 'addCat') wrap.appendChild(buildCatModal());
+  wrap.appendChild(buildBottomNav());
   return wrap;
+}
+
+function buildBottomNav() {
+  const nav = el('nav', {class:'bottom-nav'});
+
+  const recipesBtn = el('button', {class:'bottom-nav-item'+(state.selectedCat!=='fav'&&state.view==='list'?' active':'')});
+  recipesBtn.innerHTML = '<span class="nav-icon">📖</span><span>Rezepte</span>';
+  recipesBtn.onclick = () => { state.view='list'; state.selectedCat='all'; render(); };
+
+  const favBtn = el('button', {class:'bottom-nav-item'+(state.selectedCat==='fav'?' active':'')});
+  favBtn.innerHTML = '<span class="nav-icon">⭐</span><span>Favoriten</span>';
+  favBtn.onclick = () => { state.view='list'; state.selectedCat='fav'; render(); };
+
+  const addBtn = el('button', {class:'bottom-nav-add'});
+  addBtn.innerHTML = '<div class="nav-icon-add">＋</div><span style="color:#999;font-size:10px">Neu</span>';
+  addBtn.onclick = () => { state.form=blankForm(); state.view='add'; state.editingRecipe=null; render(); };
+
+  const moreBtn = el('button', {class:'bottom-nav-item'});
+  moreBtn.innerHTML = '<span class="nav-icon">⚙️</span><span>Mehr</span>';
+  moreBtn.onclick = () => {
+    const menu = document.getElementById('more-menu');
+    if (menu) { menu.remove(); return; }
+    const m = document.createElement('div');
+    m.id = 'more-menu';
+    m.style.cssText = 'position:fixed;bottom:70px;right:10px;background:#fff;border:1px solid rgba(0,0,0,0.12);border-radius:12px;padding:8px;z-index:300;box-shadow:0 4px 20px rgba(0,0,0,0.15);min-width:180px';
+    const items = [
+      ['↑ Importieren', () => { const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const text=await file.text();const imported=JSON.parse(text);if(!imported.recipes||!Array.isArray(imported.recipes))throw new Error("Ungültiges Format");const existingIds=new Set(db.recipes.map(r=>r.id));const newRecipes=imported.recipes.filter(r=>!existingIds.has(r.id));if(newRecipes.length===0){showToast("Keine neuen Rezepte gefunden");return;}let saved=0;for(const recipe of newRecipes){try{await api("POST","recipes",{id:recipe.id,title:recipe.title,data:recipe});db.recipes.unshift(recipe);saved++;}catch(err){console.error(err);}}showToast(saved+" neue Rezepte importiert ✓");render();}catch(err){showToast("Fehler: "+err.message);}};inp.click();m.remove();}],
+      ['↓ Exportieren', () => { const exportData={recipes:db.recipes,categories:db.categories,exportedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(exportData,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='kochbuch-export.json';a.click();URL.revokeObjectURL(url);showToast('Kochbuch exportiert');m.remove();}],
+      ['📁 Kategorie hinzufügen', () => { state.view='addCat'; render(); m.remove(); }],
+    ];
+    items.forEach(([label, fn]) => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.style.cssText = 'display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:none;font-size:14px;cursor:pointer;border-radius:8px;font-family:inherit;color:#1a1a18';
+      btn.onmouseenter = () => btn.style.background='#f5f4f0';
+      btn.onmouseleave = () => btn.style.background='none';
+      btn.onclick = fn;
+      m.appendChild(btn);
+    });
+    document.addEventListener('click', e => { if(!m.contains(e.target)&&e.target!==moreBtn){m.remove();} }, {once:true});
+    document.body.appendChild(m);
+  };
+
+  nav.append(recipesBtn, favBtn, addBtn, moreBtn);
+  return nav;
 }
 
 function buildHeader() {
@@ -345,10 +441,7 @@ function buildHeader() {
     showToast('Kochbuch exportiert (' + db.recipes.length + ' Rezepte)');
   };
 
-  const addBtn = el('button', {class:'btn btn-primary btn-sm'});
-  addBtn.textContent = '+ Rezept hinzufügen';
-  addBtn.onclick = () => { state.form=blankForm(); state.view='add'; state.editingRecipe=null; render(); };
-  actions.append(importBtn, exportBtn, addBtn);
+  actions.append(importBtn, exportBtn);
   h.appendChild(actions);
   return h;
 }
@@ -390,6 +483,23 @@ function buildListView() {
   sinp.value = state.searchQuery;
   sinp.oninput = e => { state.searchQuery=e.target.value; render(); };
   sb.appendChild(sinp); wrap.appendChild(sb);
+
+  // Filter chips (visible on all screens, especially mobile)
+  const filterBar = el('div', {class:'filter-bar'});
+  const allChip = el('button', {class:'filter-chip'+(state.selectedCat==='all'?' active':'')});
+  allChip.textContent = '📋 Alle'; allChip.onclick = () => { state.selectedCat='all'; render(); };
+  filterBar.appendChild(allChip);
+  const favChip = el('button', {class:'filter-chip'+(state.selectedCat==='fav'?' active':'')});
+  favChip.textContent = '⭐ Favoriten'; favChip.onclick = () => { state.selectedCat='fav'; render(); };
+  filterBar.appendChild(favChip);
+  db.categories.forEach(cat => {
+    const chip = el('button', {class:'filter-chip'+(state.selectedCat===cat.id?' active':'')});
+    chip.textContent = cat.emoji + ' ' + cat.name;
+    chip.onclick = () => { state.selectedCat=cat.id; render(); };
+    filterBar.appendChild(chip);
+  });
+  wrap.appendChild(filterBar);
+
   let recipes = db.recipes;
   if (state.selectedCat==='fav') recipes=recipes.filter(r=>r.favorite);
   else if (state.selectedCat!=='all') recipes=recipes.filter(r=>r.categories&&r.categories.includes(state.selectedCat));
